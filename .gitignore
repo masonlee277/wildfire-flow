@@ -13,7 +13,7 @@ data/*
 !data/pyrome_shp/
 !data/processed/
 !data/fod_with_predictors.csv
-!data/fod_cleaned.gpkg
+!data/fod-cleaned.gpkg
 !data/vars_50k
 
 
