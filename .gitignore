@@ -1,0 +1,16 @@
+*.log
+*.netrc
+
+*.pyc
+__pycache__/
+.DS_Store
+Thumbs.db
+
+# Ignore everything in the data folder
+data/*
+!data/artifacts/
+!data/engine/
+!data/pyrome_shp/
+!data/processed/
+
+

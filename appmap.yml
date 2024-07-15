@@ -1,0 +1,8 @@
+appmap_dir: tmp/appmap
+language: python
+name: wildfire-ignition-generator
+packages:
+  - path: data
+  - path: visualization
+  - path: models
+  - path: utils
