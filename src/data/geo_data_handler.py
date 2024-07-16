@@ -59,7 +59,7 @@ from pyproj import CRS, Transformer
 import math
 
 class GeoDataHandler:
-    def __init__(self, data_dir='wildfire-ignition-generator/data/wildfire_indicators/raw_netcdfs', pyrome_shapefile_path='wildfire-ignition-generator/data/pyrome_shp/Pyromes_CONUS_20200206.shp'):
+    def __init__(self, data_dir='data/wildfire_indicators/raw_netcdfs', pyrome_shapefile_path='data/pyrome_shp/Pyromes_CONUS_20200206.shp'):
         self.data_dir = data_dir
         self.netcdf_data = {}
         self.wui_data = None

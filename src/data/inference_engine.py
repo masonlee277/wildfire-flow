@@ -22,7 +22,7 @@ from src.models.cnf_utils import CNFUtils, create_fire_size_range
 class WildfireInferenceEngine:
     def __init__(self, config):
         self.config = config
-        self.output_dir = os.path.join('wildfire-ignition-generator/data/outputs', uuid.uuid4().hex[:6])
+        self.output_dir = os.path.join('data/outputs', uuid.uuid4().hex[:6])
         os.makedirs(self.output_dir, exist_ok=True)
         self.save_config()
         print(f'Files will be saved to: {self.output_dir}')
@@ -496,7 +496,39 @@ class WildfireInferenceEngine:
             column = f'{percentile}th_percentile'
             self.plot_map(final_df, column, 'percentile')
 
-
+    def process_and_predict_csv(self, file_path):
+        print(f"Processing file: {file_path}")
+        
+        # Load and preprocess the data
+        df = pd.read_csv(file_path)
+        print(f"Original dataframe shape: {df.shape}")
+        
+        df = self.processor.add_pyrome_column(df)
+        print("Pyrome column added")
+        
+        df = self.processor.rename_columns(df)
+        print("Columns renamed")
+        
+        df_proc = self.processor.transform(df)
+        print(f"Processed dataframe shape: {df_proc.shape}")
+        
+        # Prepare data for prediction
+        X, _ = self.processor.prepare_for_training(df_proc, is_training=False)
+        print(f"Input tensor shape: {X.shape}")
+        
+        # Make predictions
+        predictions_df = self.predict(X)
+        print(f"Predictions shape: {predictions_df.shape}")
+        
+        # Merge predictions with original dataframe
+        final_df = pd.concat([df.reset_index(drop=True), predictions_df], axis=1)
+        print(f"Final dataframe shape: {final_df.shape}")
+        
+        # Save the final dataframe
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        self.save_dataframe(final_df, f'final_df_predictions_{timestamp}')
+        
+        return final_df
 
     def run_inference_with_gif(self, date):
         percentiles = list(range(1, 100)) + [99.1, 99.2, 99.3, 99.4, 99.5, 99.6, 99.7, 99.8, 99.9, 99.99]

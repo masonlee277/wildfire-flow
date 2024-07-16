@@ -8,6 +8,7 @@ import geopandas as gpd
 from shapely.geometry import Point
 import pyproj
 import pickle
+import re
 
 from src.data.geo_data_handler import GeoDataHandler
 from src.utils.tile_manager import TileManager
@@ -16,7 +17,10 @@ from src.models.normalizing_flow import ConditionalNormalizingFlow
 
 
 class WildfireDataProcessor:
-    def __init__(self, pyrome_shapefile_path='wildfire-ignition-generator/data/pyrome_shp/Pyromes_CONUS_20200206.shp', pyrome_classes_path='wildfire-ignition-generator/data/vars_50k/pyrome_np.pkl'):
+    def __init__(self, pyrome_shapefile_path='data/pyrome_shp/Pyromes_CONUS_20200206.shp', pyrome_classes_path='data/vars_50k/pyrome_np.pkl'):
+        self.processor_path = 'data/processed/processor'  # Default path for processor files
+
+
         self.encoder = OneHotEncoder()
         self.scaler = StandardScaler()
         self.pyrome_stats = {}
@@ -76,7 +80,6 @@ class WildfireDataProcessor:
         pyrome = self.classify_coords(lat, lon)
         erc_percentile = self.convert_to_percentile(erc, 'ERC', pyrome)
         bi_percentile = self.convert_to_percentile(bi, 'BI', pyrome)
-        # ... (process other features)
         return self.prepare_for_model(features)
 
     def convert_to_percentile(self, value, feature, pyrome):
@@ -124,9 +127,11 @@ class WildfireDataProcessor:
         self.fit_performed = True
         return self._preprocess_data(df, fit=True)
 
-    def transform(self, df):
+    def transform(self, df, rename=False, add_pyrome=False):
         if not self.fit_performed:
             raise ValueError("Fit must be performed before transform")
+        if add_pyrome: df = processor.add_pyrome_column(df)
+        if rename:  df = processor.rename_columns(df)
         return self._preprocess_data(df, fit=False)
 
     def fit_transform(self, df):
@@ -196,7 +201,28 @@ class WildfireDataProcessor:
         pyrome_df = pd.get_dummies(df['Pyrome'], prefix='Pyrome').astype(int)
 
         print(pyrome_df.head())
+
+        ## TODO: add in all the other columns of the unique pyromes that were not in the dataset:
         # Compute cyclic date variables
+                # Add missing pyrome columns
+        all_pyromes = sorted(self.pyromes_unique)  # Ensure pyromes are in increasing order
+        for pyrome in all_pyromes:
+            col_name = f'Pyrome_{int(pyrome)}'
+            if col_name not in pyrome_df.columns:
+                pyrome_df[col_name] = 0
+
+        def extract_number(col_name):
+            match = re.search(r'\d+', col_name)
+            return int(match.group()) if match else None
+            
+        # Reorder columns to ensure they're in increasing pyrome order
+        pyrome_cols =  sorted(pyrome_df.columns, key=extract_number)
+        pyrome_df = pyrome_df[pyrome_cols]
+
+        print("Pyrome columns after adding missing ones:")
+        print(pyrome_df.columns.tolist())
+
+
         df['ignition_sin'] = df['Ignition date'].apply(self._date_sin)
         df['ignition_cos'] = df['Ignition date'].apply(self._date_cos)
         print_nan_info(df, "After computing cyclic date variables")
@@ -304,7 +330,7 @@ class WildfireDataProcessor:
 
     def prepare_for_training(self, df, is_training=True):
         # Drop the target and date columns
-        X = df.drop(columns=['Acres', 'Ignition date'])
+        X = df.drop(columns=['Acres', 'Ignition date', 'original_index'])
         y = df['Acres']
         
         # Print shapes after dropping columns
@@ -339,7 +365,7 @@ class WildfireDataProcessor:
 
         return X, y
 
-    def save(self, path='wildfire-ignition-generator/data/processed/processor'):
+    def save(self, path='data/processed/processor'):
         if not self.fit_performed:
             raise ValueError("Fit must be performed before saving")
         os.makedirs(path, exist_ok=True)
@@ -348,12 +374,58 @@ class WildfireDataProcessor:
         joblib.dump(self.pyrome_stats, os.path.join(path, 'pyrome_stats.joblib'))
         print('saved encoders!')
 
-    def load(self, path='wildfire-ignition-generator/data/processed/processor'):
+    def load(self, path=None):
+        """
+        Load the preprocessor files (encoder, scaler, and pyrome stats).
+
+        Args:
+            path (str, optional): Path to the directory containing preprocessor files.
+                                  If None, uses the default path.
+        """
+        if path is None:
+            path = self.processor_path
+        
+        print(f"Loading preprocessor files from: {path}")
+        
         self.encoder = joblib.load(os.path.join(path, 'encoder.joblib'))
         self.scaler = joblib.load(os.path.join(path, 'scaler.joblib'))
         self.pyrome_stats = joblib.load(os.path.join(path, 'pyrome_stats.joblib'))
         self.fit_performed = True
-        print('loaded encoders!')
+        print('Preprocessor files loaded successfully!')
+
+    def print_preprocessor_stats(self):
+        """
+        Print detailed statistics about the preprocessor components.
+        """
+        if not self.fit_performed:
+            print("Preprocessor has not been fitted or loaded yet.")
+            return
+
+        print("\n=== Preprocessor Statistics ===\n")
+
+        print("1. Scaler Statistics:")
+        print("   Features scaled:")
+        for idx, feature in enumerate(self.scaler.feature_names_in_):
+            print(f"   - {feature}:")
+            print(f"     Mean: {self.scaler.mean_[idx]:.4f}")
+            print(f"     Scale: {self.scaler.scale_[idx]:.4f}")
+
+        print("\n2. Encoder Information:")
+        print("   Pyrome Categories:")
+        for category in self.encoder.categories_[0]:
+            print(f"   - {category}")
+
+        print("\n3. Pyrome Statistics:")
+        for feature, stats in self.pyrome_stats.items():
+            print(f"   {feature}:")
+            for pyrome, values in stats.iterrows():
+                print(f"     Pyrome {pyrome}:")
+                print(f"       Min: {values['min']:.2f}")
+                print(f"       Max: {values['max']:.2f}")
+                print(f"       Mean: {values['mean']:.2f}")
+                print(f"       Std: {values['std']:.2f}")
+
+        print("\n=== End of Preprocessor Statistics ===")
 
     def process_new_data(self, lat, lon, erc, wui, bi, date):
         pyrome = self.classify_coords(lat, lon)
@@ -382,6 +454,26 @@ class WildfireDataProcessor:
 
         return torch.tensor(features_scaled, dtype=torch.float32)
 
+    def add_pyrome_column(self, df):
+        """
+        Add Pyrome column based on latitude and longitude.
+        """
+        df['Pyrome'] = df.apply(lambda row: self.classify_coords(row['lat'], row['lon']), axis=1)
+        return df
+
+    def rename_columns(self, df):
+        """
+        Rename columns to match the original format.
+        """
+        column_mapping = {
+            'date': 'Ignition date',
+            'lon': 'Longitude',
+            'lat': 'Latitude',
+            'erc': 'ERC',
+            'bi': 'BI',
+            'wui proximity': 'WUI proximity'
+        }
+        return df.rename(columns=column_mapping)
 # Usage example
 if __name__ == "__main__":
     # Load your data here and use the processor

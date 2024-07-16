@@ -8,12 +8,12 @@ Thumbs.db
 
 # Ignore everything in the data folder
 data/*
-!data/artifacts/
 !data/engine/
 !data/pyrome_shp/
-!data/processed/
 !data/fod_with_predictors.csv
 !data/fod-cleaned.gpkg
 !data/vars_50k
-
-
+!data/sheets
+!data/artifacts/
+!data/processed/
+!data/processed/
